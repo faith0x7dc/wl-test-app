@@ -1,5 +1,8 @@
 /*
+ * The MIT License (MIT)
+ *
  * Copyright © 2011 Benjamin Franzke
+ * Copyright © 2014 faith0x7dc
  *
  * Permission to use, copy, modify, distribute, and sell this software and its
  * documentation for any purpose is hereby granted without fee, provided that
@@ -37,6 +40,8 @@
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
 #include <EGL/eglext.h>
+
+#include "gfx-util.h"
 
 #ifndef EGL_EXT_swap_buffers_with_damage
 #define EGL_EXT_swap_buffers_with_damage 1
@@ -94,6 +99,10 @@ struct window {
 	EGLSurface egl_surface;
 	struct wl_callback *callback;
 	int fullscreen, configured, opaque, buffer_size, frame_sync;
+
+	struct Graphics *gfx;
+	uint32_t bg_color;
+	char *title;
 };
 
 static const char *vert_shader_text =
@@ -358,7 +367,7 @@ create_surface(struct window *window)
 				       display->egl.conf,
 				       window->native, NULL);
 
-	wl_shell_surface_set_title(window->shell_surface, "simple-egl");
+	wl_shell_surface_set_title(window->shell_surface, window->title ? window->title : "simple-window-egl");
 
 	ret = eglMakeCurrent(window->display->egl.dpy, window->egl_surface,
 			     window->egl_surface, window->display->egl.ctx);
@@ -395,28 +404,15 @@ redraw(void *data, struct wl_callback *callback, uint32_t time)
 {
 	struct window *window = data;
 	struct display *display = window->display;
-	static const GLfloat verts[3][2] = {
-		{ -0.5, -0.5 },
-		{  0.5, -0.5 },
-		{  0,    0.5 }
-	};
-	static const GLfloat colors[3][3] = {
-		{ 1, 0, 0 },
-		{ 0, 1, 0 },
-		{ 0, 0, 1 }
-	};
-	GLfloat angle;
 	GLfloat rotation[4][4] = {
 		{ 1, 0, 0, 0 },
 		{ 0, 1, 0, 0 },
 		{ 0, 0, 1, 0 },
 		{ 0, 0, 0, 1 }
 	};
-	static const int32_t speed_div = 5, benchmark_interval = 5;
 	struct wl_region *region;
 	EGLint rect[4];
 	EGLint buffer_age = 0;
-	struct timeval tv;
 
 	assert(window->callback == callback);
 	window->callback = NULL;
@@ -426,25 +422,6 @@ redraw(void *data, struct wl_callback *callback, uint32_t time)
 
 	if (!window->configured)
 		return;
-
-	gettimeofday(&tv, NULL);
-	time = tv.tv_sec * 1000 + tv.tv_usec / 1000;
-	if (window->frames == 0)
-		window->benchmark_time = time;
-	if (time - window->benchmark_time > (benchmark_interval * 1000)) {
-		printf("%d frames in %d seconds: %f fps\n",
-		       window->frames,
-		       benchmark_interval,
-		       (float) window->frames / benchmark_interval);
-		window->benchmark_time = time;
-		window->frames = 0;
-	}
-
-	angle = (time / speed_div) % 360 * M_PI / 180.0;
-	rotation[0][0] =  cos(angle);
-	rotation[0][2] =  sin(angle);
-	rotation[2][0] = -sin(angle);
-	rotation[2][2] =  cos(angle);
 
 	if (display->swap_buffers_with_damage)
 		eglQuerySurface(display->egl.dpy, window->egl_surface,
@@ -458,15 +435,7 @@ redraw(void *data, struct wl_callback *callback, uint32_t time)
 	glClearColor(0.0, 0.0, 0.0, 0.5);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	glVertexAttribPointer(window->gl.pos, 2, GL_FLOAT, GL_FALSE, 0, verts);
-	glVertexAttribPointer(window->gl.col, 3, GL_FLOAT, GL_FALSE, 0, colors);
-	glEnableVertexAttribArray(window->gl.pos);
-	glEnableVertexAttribArray(window->gl.col);
-
-	glDrawArrays(GL_TRIANGLES, 0, 3);
-
-	glDisableVertexAttribArray(window->gl.pos);
-	glDisableVertexAttribArray(window->gl.col);
+	GfxDrawRectangle(window->gfx, -1, -1, 2, 2, window->bg_color);
 
 	if (window->opaque || window->fullscreen) {
 		region = wl_compositor_create_region(window->display->compositor);
@@ -731,11 +700,9 @@ signal_int(int signum)
 static void
 usage(int error_code)
 {
-	fprintf(stderr, "Usage: simple-egl [OPTIONS]\n\n"
-		"  -f\tRun in fullscreen mode\n"
-		"  -o\tCreate an opaque surface\n"
-		"  -s\tUse a 16 bpp EGL config\n"
-		"  -b\tDon't sync to compositor redraw (eglSwapInterval 0)\n"
+	fprintf(stderr, "Usage: wl-simple-window-egl [OPTIONS]\n\n"
+		"  -c\tSpecify color(default = 0xffffffff)\n"
+		"  -t\tSpecify title(default = simple-window-egl)\n"
 		"  -h\tThis help text\n\n");
 
 	exit(error_code);
@@ -756,16 +723,17 @@ main(int argc, char **argv)
 	window.buffer_size = 32;
 	window.frame_sync = 1;
 
+	window.bg_color = 0xffffffff;
+	window.title = NULL;
+
 	for (i = 1; i < argc; i++) {
-		if (strcmp("-f", argv[i]) == 0)
-			window.fullscreen = 1;
-		else if (strcmp("-o", argv[i]) == 0)
-			window.opaque = 1;
-		else if (strcmp("-s", argv[i]) == 0)
-			window.buffer_size = 16;
-		else if (strcmp("-b", argv[i]) == 0)
-			window.frame_sync = 0;
-		else if (strcmp("-h", argv[i]) == 0)
+		if ((strcmp("-c", argv[i]) == 0) && (i + 1 < argc)) {
+			sscanf(argv[i + 1], "%x", &window.bg_color);
+			i++;
+		} else if ((strcmp("-t", argv[i]) == 0) && (i + 1 < argc) && !window.title) {
+			window.title = strdup(argv[i + 1]);
+			i++;
+		} else if (strcmp("-h", argv[i]) == 0)
 			usage(EXIT_SUCCESS);
 		else
 			usage(EXIT_FAILURE);
@@ -787,6 +755,8 @@ main(int argc, char **argv)
 	display.cursor_surface =
 		wl_compositor_create_surface(display.compositor);
 
+	window.gfx = GfxCreate(window.gl.pos, window.gl.col);
+
 	sigint.sa_handler = signal_int;
 	sigemptyset(&sigint.sa_mask);
 	sigint.sa_flags = SA_RESETHAND;
@@ -803,7 +773,12 @@ main(int argc, char **argv)
 		redraw(&window, NULL, 0);
 	}
 
-	fprintf(stderr, "simple-egl exiting\n");
+	fprintf(stderr, "simple-window-egl exiting\n");
+
+	if (window.title)
+		free(window.title);
+
+	GfxDestroy(window.gfx);
 
 	destroy_surface(&window);
 	fini_egl(&display);
