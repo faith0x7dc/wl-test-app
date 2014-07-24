@@ -87,6 +87,7 @@ struct window {
 
 	char *title;
 	uint32_t bg_color;
+	int focused;
 };
 
 static const char *vert_shader_text =
@@ -390,7 +391,12 @@ redraw(void *data, struct wl_callback *callback, uint32_t time)
 	glClearColor(0.0, 0.0, 0.0, 0.0);
 	glClear(GL_COLOR_BUFFER_BIT);
 
-	draw_rectangle(window, -1, -1, 2, 2, window->bg_color);
+	if (window->focused) {
+		draw_rectangle(window, -1, -1, 2, 2, 0xff000000 | ~window->bg_color);
+		draw_rectangle(window, -1 + 0.1, -1 + 0.1, 2 - 0.2, 2 - 0.2, window->bg_color);
+	} else {
+		draw_rectangle(window, -1, -1, 2, 2, window->bg_color);
+	}
 
 	wl_surface_set_opaque_region(window->surface, NULL);
 
@@ -556,12 +562,18 @@ keyboard_handle_enter(void *data, struct wl_keyboard *keyboard,
 		      uint32_t serial, struct wl_surface *surface,
 		      struct wl_array *keys)
 {
+	struct display *display = data;
+
+	display->window->focused = 1;
 }
 
 static void
 keyboard_handle_leave(void *data, struct wl_keyboard *keyboard,
 		      uint32_t serial, struct wl_surface *surface)
 {
+	struct display *display = data;
+
+	display->window->focused = 0;
 }
 
 static void
