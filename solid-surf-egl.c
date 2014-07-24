@@ -730,6 +730,7 @@ usage(int error_code)
 	fprintf(stderr, "Usage: solid-surf-egl [OPTIONS]\n\n"
 		"  -t <title>\tSpecify title(default = solid-surf-egl)\n"
 		"  -c <color>\tSpecify color(default = 0xffffffff)\n"
+		"  -s <width>x<height>\tSpecify size(default = 250x250)\n"
 		"  -h\tThis help text\n\n");
 
 	exit(error_code);
@@ -758,6 +759,9 @@ main(int argc, char **argv)
 			i++;
 		} else if ((strcmp("-c", argv[i]) == 0) && (i + 1 < argc)) {
 			sscanf(argv[i + 1], "%x", &window.bg_color);
+			i++;
+		} else if ((strcmp("-s", argv[i]) == 0) && (i + 1 < argc)) {
+			sscanf(argv[i + 1], "%dx%d", &window.window_size.width, &window.window_size.height);
 			i++;
 		} else if (strcmp("-h", argv[i]) == 0)
 			usage(EXIT_SUCCESS);
