@@ -32,13 +32,15 @@ make V=1
 %install
 %make_install
 
-mkdir -p %{buildroot}%{_bindir}/test-app/
+mkdir -p %{buildroot}%{_bindir}/wl-test-app/
 
-install -m 755 wl-simple-window-egl %{buildroot}%{_bindir}/test-app/
+install -m 755 wl-simple-window-egl %{buildroot}%{_bindir}/wl-test-app/
+install -m 755 solid-surf-egl %{buildroot}%{_bindir}/wl-test-app/
 
 %define _unpackaged_files_terminate_build 0
 
 %files
 %defattr(-,root,root)
-%_bindir/test-app/wl-simple-window-egl
+%_bindir/wl-test-app/wl-simple-window-egl
+%_bindir/wl-test-app/solid-surf-egl
 
