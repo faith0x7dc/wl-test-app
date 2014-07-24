@@ -39,17 +39,6 @@
 
 #include <GLES2/gl2.h>
 #include <EGL/egl.h>
-#include <EGL/eglext.h>
-
-#ifndef EGL_EXT_swap_buffers_with_damage
-#define EGL_EXT_swap_buffers_with_damage 1
-typedef EGLBoolean (EGLAPIENTRYP PFNEGLSWAPBUFFERSWITHDAMAGEEXTPROC)(EGLDisplay dpy, EGLSurface surface, EGLint *rects, EGLint n_rects);
-#endif
-
-#ifndef EGL_EXT_buffer_age
-#define EGL_EXT_buffer_age 1
-#define EGL_BUFFER_AGE_EXT			0x313D
-#endif
 
 struct window;
 struct seat;
@@ -73,8 +62,6 @@ struct display {
 		EGLConfig conf;
 	} egl;
 	struct window *window;
-
-	PFNEGLSWAPBUFFERSWITHDAMAGEEXTPROC swap_buffers_with_damage;
 };
 
 struct geometry {
@@ -129,7 +116,6 @@ init_egl(struct display *display, struct window *window)
 		EGL_CONTEXT_CLIENT_VERSION, 2,
 		EGL_NONE
 	};
-	const char *extensions;
 
 	EGLint config_attribs[] = {
 		EGL_SURFACE_TYPE, EGL_WINDOW_BIT,
@@ -184,19 +170,6 @@ init_egl(struct display *display, struct window *window)
 					    display->egl.conf,
 					    EGL_NO_CONTEXT, context_attribs);
 	assert(display->egl.ctx);
-
-	display->swap_buffers_with_damage = NULL;
-	extensions = eglQueryString(display->egl.dpy, EGL_EXTENSIONS);
-	if (extensions &&
-	    strstr(extensions, "EGL_EXT_swap_buffers_with_damage") &&
-	    strstr(extensions, "EGL_EXT_buffer_age"))
-		display->swap_buffers_with_damage =
-			(PFNEGLSWAPBUFFERSWITHDAMAGEEXTPROC)
-			eglGetProcAddress("eglSwapBuffersWithDamageEXT");
-
-	if (display->swap_buffers_with_damage)
-		printf("has EGL_EXT_buffer_age and EGL_EXT_swap_buffers_with_damage\n");
-
 }
 
 static void
@@ -402,9 +375,6 @@ redraw(void *data, struct wl_callback *callback, uint32_t time)
 {
 	struct window *window = data;
 	struct display *display = window->display;
-	struct wl_region *region;
-	EGLint rect[4];
-	EGLint buffer_age = 0;
 
 	assert(window->callback == callback);
 	window->callback = NULL;
@@ -415,10 +385,6 @@ redraw(void *data, struct wl_callback *callback, uint32_t time)
 	if (!window->configured)
 		return;
 
-	if (display->swap_buffers_with_damage)
-		eglQuerySurface(display->egl.dpy, window->egl_surface,
-				EGL_BUFFER_AGE_EXT, &buffer_age);
-
 	glViewport(0, 0, window->geometry.width, window->geometry.height);
 
 	glClearColor(0.0, 0.0, 0.0, 0.0);
@@ -426,28 +392,10 @@ redraw(void *data, struct wl_callback *callback, uint32_t time)
 
 	draw_rectangle(window, -1, -1, 2, 2, window->bg_color);
 
-	if (window->opaque || window->fullscreen) {
-		region = wl_compositor_create_region(window->display->compositor);
-		wl_region_add(region, 0, 0,
-			      window->geometry.width,
-			      window->geometry.height);
-		wl_surface_set_opaque_region(window->surface, region);
-		wl_region_destroy(region);
-	} else {
-		wl_surface_set_opaque_region(window->surface, NULL);
-	}
+	wl_surface_set_opaque_region(window->surface, NULL);
 
-	if (display->swap_buffers_with_damage && buffer_age > 0) {
-		rect[0] = window->geometry.width / 4 - 1;
-		rect[1] = window->geometry.height / 4 - 1;
-		rect[2] = window->geometry.width / 2 + 2;
-		rect[3] = window->geometry.height / 2 + 2;
-		display->swap_buffers_with_damage(display->egl.dpy,
-						  window->egl_surface,
-						  rect, 1);
-	} else {
-		eglSwapBuffers(display->egl.dpy, window->egl_surface);
-	}
+	eglSwapBuffers(display->egl.dpy, window->egl_surface);
+
 	window->frames++;
 }
 
